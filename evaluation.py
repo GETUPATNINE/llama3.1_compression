@@ -9,7 +9,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 
-BASE_MODEL_PATH = "llama-3.1-8B-Instruct"
+# BASE_MODEL_PATH = "llama-3.1-8B-Instruct"
+# BASE_MODEL_PATH = "merged_lora_llama"
+BASE_MODEL_PATH = "output/lora_finetuned_llama-3.1-8B-Instruct2"
 FINETUNED_MODEL_PATH = "output/lora_finetuned_llama-3.1-8B-Instruct"
 DATA_PATH = "data/diabetes/with_info/"
 RESULTS_PATH = "output/evaluation_results"
@@ -20,8 +22,8 @@ def load_test_data():
     """Load the test data (using the last 20% of each file)"""
     all_data = []
     
-    for i in range(10):
-        file_path = os.path.join(DATA_PATH, f"diabetes_{i}.json")
+    for i in range(5):
+        file_path = os.path.join(DATA_PATH, f"diabetes_{i+50}.json")
         if os.path.exists(file_path):
             with open(file_path, 'r') as f:
                 data = json.load(f)
@@ -86,28 +88,30 @@ def generate_predictions(model, tokenizer, test_data):
     
     return predictions, labels, detailed_results
 
-def evaluate_model():
+def evaluate_model(model=None, tokenizer=None):
+    
     print("Loading test data...")
     test_data = load_test_data()
-    
-    print("Loading base model and tokenizer...")
-    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_PATH)
-    tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    print("Loading the base model...")
-    base_model = AutoModelForCausalLM.from_pretrained(
-        BASE_MODEL_PATH,
-        torch_dtype=torch.float16,
-        device_map="auto",
-    )
+    if model is None:
+        print("Loading base model and tokenizer...")
+        tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_PATH)
+        tokenizer.pad_token_id = tokenizer.eos_token_id
+
+        print("Loading the base model...")
+        model = AutoModelForCausalLM.from_pretrained(
+            BASE_MODEL_PATH,
+            torch_dtype=torch.float16,
+            device_map="auto",
+        )
     
-    print("Loading the finetuned model...")
-    peft_config = PeftConfig.from_pretrained(FINETUNED_MODEL_PATH)
-    finetuned_model = PeftModel.from_pretrained(base_model, FINETUNED_MODEL_PATH)
+    # pruned_dict = torch.load("prune_log/llama3.1_prune_log/pytorch_model.bin", map_location='cuda', weights_only=False)
+    # pruned_tokenizer, pruned_model = pruned_dict['tokenizer'], pruned_dict['model']
+    # tokenizer.pad_token_id = 0
     
     print("Generating predictions...")
-    predictions, labels, detailed_results = generate_predictions(finetuned_model, tokenizer, test_data)
-    # predictions, labels, detailed_results = generate_predictions(base_model, tokenizer, test_data)
+    predictions, labels, detailed_results = generate_predictions(model, tokenizer, test_data)
+    # predictions, labels, detailed_results = generate_predictions(pruned_model, pruned_tokenizer, test_data)
 
     precision, recall, f1, _ = precision_recall_fscore_support(labels, predictions, average='binary')
     accuracy = accuracy_score(labels, predictions)
@@ -132,7 +136,6 @@ def evaluate_model():
     with open(os.path.join(RESULTS_PATH, "detailed_results.json"), "w") as f:
         json.dump(detailed_results, f, indent=2)
     
-    # Plot confusion matrix
     plt.figure(figsize=(8, 6))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
                 xticklabels=['No Diabetes', 'Diabetes'],
@@ -143,7 +146,6 @@ def evaluate_model():
     plt.tight_layout()
     plt.savefig(os.path.join(RESULTS_PATH, "confusion_matrix.png"))
     
-    # Plot feature importance (using coefficients analysis for false positives/negatives)
     analyze_feature_importance(test_data, predictions, labels)
 
 def analyze_feature_importance(test_data, predictions, labels):
@@ -153,13 +155,11 @@ def analyze_feature_importance(test_data, predictions, labels):
         'Glucose', 'Insulin', 'BMI', 'DiabetesPedigree'
     ]
     
-    # Extract features from input text
     features = []
     for item in test_data:
         input_text = item['input']
         feature_values = {}
         
-        # Extract values using string parsing
         for feature in feature_names:
             if feature == 'Age':
                 value = float(input_text.split('Age is ')[1].split('.')[0])
@@ -182,13 +182,11 @@ def analyze_feature_importance(test_data, predictions, labels):
         
         features.append(feature_values)
     
-    # Convert to DataFrame
     df = pd.DataFrame(features)
     df['true_label'] = labels
     df['predicted_label'] = predictions
     df['correct'] = df['true_label'] == df['predicted_label']
     
-    # Analyze features for different prediction categories
     categories = [
         ('True Positives', (df['true_label'] == 1) & (df['predicted_label'] == 1)),
         ('False Positives', (df['true_label'] == 0) & (df['predicted_label'] == 1)),
@@ -196,13 +194,11 @@ def analyze_feature_importance(test_data, predictions, labels):
         ('False Negatives', (df['true_label'] == 1) & (df['predicted_label'] == 0))
     ]
     
-    # Calculate feature statistics for each category
     stats = {}
     for name, mask in categories:
-        if df[mask].shape[0] > 0:  # Only if we have examples in this category
+        if df[mask].shape[0] > 0:
             stats[name] = df[mask][feature_names].mean().to_dict()
     
-    # Plot feature comparisons
     plt.figure(figsize=(15, 10))
     for i, feature in enumerate(feature_names):
         plt.subplot(2, 4, i+1)
@@ -216,7 +212,6 @@ def analyze_feature_importance(test_data, predictions, labels):
     plt.tight_layout()
     plt.savefig(os.path.join(RESULTS_PATH, "feature_analysis.png"))
     
-    # Save feature statistics
     with open(os.path.join(RESULTS_PATH, "feature_stats.json"), "w") as f:
         json.dump(stats, f, indent=2)
 

@@ -19,6 +19,10 @@ from LLMPruner.utils.logger import LoggerWithDepth
 from LLMPruner.evaluator.ppl import PPLMetric
 from LLMPruner.datasets.example_samples import get_examples
 from LLMPruner.templates.prompts import prompts
+sys.path.append(".")
+from evaluation import evaluate_model
+
+OUTPUT_DIR = 'output/llm_Pruner'
 
 def set_random_seed(seed):
     random.seed(seed)
@@ -128,7 +132,7 @@ def main(args):
         for i in range(args.iterative_steps):
 
             if pruner_type in ['taylor']:
-                example_prompts = get_examples('bookcorpus', tokenizer, args.num_examples, seq_len = 64).to(args.device)
+                example_prompts = get_examples('diabetes', tokenizer, args.num_examples, seq_len = 64).to(args.device)
                 logger.log("Start Backwarding in iterative steps = {}...".format(i))
                 if args.taylor in ['param_mix', 'param_second']:
                     for j in range(args.num_examples):
@@ -271,8 +275,8 @@ def main(args):
         
         logger.log("\n==================Finish================\n")
     
-    ppl = PPLMetric(model, tokenizer, ['wikitext2', 'ptb'], args.max_seq_len, device=args.eval_device)
-    logger.log("PPL after pruning: {}".format(ppl))
+    # ppl = PPLMetric(model, tokenizer, ['wikitext2', 'ptb'], args.max_seq_len, device=args.eval_device)
+    # logger.log("PPL after pruning: {}".format(ppl))
     logger.log("Memory Requirement: {} MiB\n".format(torch.cuda.memory_allocated()/1024/1024))
 
 if __name__ == "__main__":

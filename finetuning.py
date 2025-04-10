@@ -1,4 +1,6 @@
 import os
+import sys
+sys.path.append(".")
 import json
 import torch
 import numpy as np
@@ -18,10 +20,11 @@ from peft import (
 )
 import evaluate
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+from evaluation import evaluate_model
 
 BASE_MODEL_PATH = "llama-3.1-8B-Instruct"
 DATA_PATH = "data/diabetes/with_info/"
-OUTPUT_DIR = "output/lora_finetuned_llama-3.1-8B-Instruct"
+OUTPUT_DIR = "output/lora_finetuned_llama-3.1-8B-Instruct2"
 
 def load_diabetes_data():
     all_data = []
@@ -87,9 +90,6 @@ def compute_metrics(eval_pred):
     }
 
 def main():
-    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_PATH)
-    tokenizer.pad_token = tokenizer.eos_token
-    
     lora_config = LoraConfig(
         r=16,
         lora_alpha=32,
@@ -100,16 +100,26 @@ def main():
     )
     
     print("Loading base model...")
-    model = AutoModelForCausalLM.from_pretrained(
-        BASE_MODEL_PATH,
-        torch_dtype=torch.float16,
-        device_map="auto",
-    )
     
-    # model = prepare_model_for_kbit_training(model)
-    model = get_peft_model(model, lora_config)
+    # model = AutoModelForCausalLM.from_pretrained(
+    #     BASE_MODEL_PATH,
+    #     torch_dtype=torch.float16,
+    #     device_map="auto",
+    # )
+    # tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_PATH)
+    # tokenizer.pad_token = tokenizer.eos_token
+
+    pruned_dict = torch.load("prune_log/llama3.1_prune_log/pytorch_model.bin", map_location='cuda', weights_only=False)
+    tokenizer, pruned_model = pruned_dict['tokenizer'], pruned_dict['model']
+    tokenizer.pad_token = tokenizer.eos_token
+    
+    print(pruned_model)
+
+    model = get_peft_model(pruned_model, lora_config)
     model.print_trainable_parameters()
-    
+
+    print(model)
+
     print("Loading and processing data...")
     train_dataset, eval_dataset = load_diabetes_data()
     
@@ -148,15 +158,15 @@ def main():
     
     print("Starting training...")
     trainer.train()
-    
+
+    model = model.merge_and_unload()
+    print(model)
     model.save_pretrained(OUTPUT_DIR)
     tokenizer.save_pretrained(OUTPUT_DIR)
     
     print(f"Model saved to {OUTPUT_DIR}")
     
-    print("Performing detailed evaluation...")
-    eval_results = trainer.evaluate()
-    print(f"Evaluation Results: {eval_results}")
+    evaluate_model(model, tokenizer)
 
 if __name__ == "__main__":
     main()
