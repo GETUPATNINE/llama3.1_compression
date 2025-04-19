@@ -7,3 +7,4 @@ python ./LLM-Pruner/llama3.py --base_model merged_lora_llama \
   --pruner_type taylor  --taylor param_first \
   --save_model  --max_seq_len 2048 \
   --num_examples 25 \
+  --calibration_dataset diabetes \

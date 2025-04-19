@@ -1,10 +1,10 @@
 import os
 import json
 import torch
+import time
 import numpy as np
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from peft import PeftModel, PeftConfig
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix
+from sklearn.metrics import accuracy_score, roc_auc_score, roc_curve, confusion_matrix
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
@@ -22,8 +22,8 @@ def load_test_data():
     """Load the test data (using the last 20% of each file)"""
     all_data = []
     
-    for i in range(5):
-        file_path = os.path.join(DATA_PATH, f"diabetes_{i+50}.json")
+    for i in range(50, 55):
+        file_path = os.path.join(DATA_PATH, f"diabetes_{i}.json")
         if os.path.exists(file_path):
             with open(file_path, 'r') as f:
                 data = json.load(f)
@@ -37,17 +37,13 @@ def load_test_data():
             "true_output": item['output'],
             "label": 1 if item['output'].strip() == "Yes" else 0
         })
-    
-    np.random.seed(42)
-    np.random.shuffle(processed_data)
-    split_idx = int(len(processed_data) * 0.8)
-    test_data = processed_data[split_idx:]
-    
-    return test_data
+        
+    return processed_data
 
 def generate_predictions(model, tokenizer, test_data):
     """Generate predictions for the test data"""
     predictions = []
+    raw_probabilities = []
     labels = []
     detailed_results = []
     
@@ -65,10 +61,28 @@ def generate_predictions(model, tokenizer, test_data):
                 num_return_sequences=1,
                 temperature=0.1,
                 do_sample=False,
+                return_dict_in_generate=True,
+                output_scores=True,
             )
         
-        generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+        generated_text = tokenizer.decode(outputs.sequences[0], skip_special_tokens=True)
         response = generated_text.split("<|im_start|>assistant")[-1].strip()
+        
+        # Get probability score for positive class (approximation)
+        # Using the confidence of the first token as a proxy
+        scores = outputs.scores[0][0]
+        yes_tokens = tokenizer(" yes", add_special_tokens=False).input_ids
+        no_tokens = tokenizer(" no", add_special_tokens=False).input_ids
+        
+        # Get probability for "yes" (simplified approach)
+        if len(yes_tokens) > 0 and len(no_tokens) > 0:
+            yes_prob = scores[yes_tokens[0]].item()
+            no_prob = scores[no_tokens[0]].item()
+            positive_score = yes_prob / (yes_prob + no_prob) if (yes_prob + no_prob) > 0 else 0.5
+        else:
+            positive_score = 0.5 if "yes" in response.lower() else 0.0
+            
+        raw_probabilities.append(positive_score)
         
         prediction = "Yes" if "yes" in response.lower() else "No"
         predicted_label = 1 if prediction == "Yes" else 0
@@ -80,13 +94,14 @@ def generate_predictions(model, tokenizer, test_data):
             "input": item['input'],
             "true_output": item['true_output'],
             "predicted_output": prediction,
+            "confidence_score": positive_score,
             "correct": item['true_output'] == prediction
         })
         
         if i % 10 == 0:
             print(f"Processed {i}/{len(test_data)} examples")
     
-    return predictions, labels, detailed_results
+    return predictions, raw_probabilities, labels, detailed_results
 
 def evaluate_model(model=None, tokenizer=None):
     
@@ -105,37 +120,52 @@ def evaluate_model(model=None, tokenizer=None):
             device_map="auto",
         )
     
-    # pruned_dict = torch.load("prune_log/llama3.1_prune_log/pytorch_model.bin", map_location='cuda', weights_only=False)
-    # pruned_tokenizer, pruned_model = pruned_dict['tokenizer'], pruned_dict['model']
-    # tokenizer.pad_token_id = 0
+        # pruned_dict = torch.load("prune_log/llama3.1_prune_log/pytorch_model.bin", map_location='cuda', weights_only=False)
+        # pruned_tokenizer, pruned_model = pruned_dict['tokenizer'], pruned_dict['model']
+        # tokenizer.pad_token_id = 0
     
     print("Generating predictions...")
-    predictions, labels, detailed_results = generate_predictions(model, tokenizer, test_data)
+    start_time = time.time()
+    print("GPU memory usage: " + str(torch.cuda.memory_allocated() / 1024**3) + " GB")
+
+    predictions, probabilities, labels, detailed_results = generate_predictions(model, tokenizer, test_data)
     # predictions, labels, detailed_results = generate_predictions(pruned_model, pruned_tokenizer, test_data)
 
-    precision, recall, f1, _ = precision_recall_fscore_support(labels, predictions, average='binary')
+    end_time = time.time()
+    print(f"Time taken for predictions: {end_time - start_time:.2f} seconds")
+
     accuracy = accuracy_score(labels, predictions)
+    auc = roc_auc_score(labels, probabilities)
+    fpr, tpr, thresholds = roc_curve(labels, probabilities)
     cm = confusion_matrix(labels, predictions)
     
     print(f"Accuracy: {accuracy:.4f}")
-    print(f"Precision: {precision:.4f}")
-    print(f"Recall: {recall:.4f}")
-    print(f"F1 Score: {f1:.4f}")
+    print(f"AUC: {auc:.4f}")
     
     metrics = {
+        "pruning sparsity": 0.5,
         "accuracy": float(accuracy),
-        "precision": float(precision),
-        "recall": float(recall),
-        "f1": float(f1),
+        "auc": float(auc),
         "confusion_matrix": cm.tolist()
     }
     
     with open(os.path.join(RESULTS_PATH, "metrics.json"), "w") as f:
-        json.dump(metrics, f, indent=2)
+        json.dump(metrics, f, indent=4)
     
     with open(os.path.join(RESULTS_PATH, "detailed_results.json"), "w") as f:
-        json.dump(detailed_results, f, indent=2)
+        json.dump(detailed_results, f, indent=5)
     
+    roc_data = {
+        "fpr": fpr.tolist(),
+        "tpr": tpr.tolist(),
+        "thresholds": thresholds.tolist()
+    }
+    
+    with open(os.path.join(RESULTS_PATH, "roc_data.json"), "w") as f:
+        json.dump(roc_data, f, indent=3)
+    
+    # Create visualizations
+    # 1. Confusion Matrix
     plt.figure(figsize=(8, 6))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
                 xticklabels=['No Diabetes', 'Diabetes'],
@@ -146,7 +176,17 @@ def evaluate_model(model=None, tokenizer=None):
     plt.tight_layout()
     plt.savefig(os.path.join(RESULTS_PATH, "confusion_matrix.png"))
     
-    analyze_feature_importance(test_data, predictions, labels)
+    # 2. ROC Curve
+    plt.figure(figsize=(8, 6))
+    plt.plot(fpr, tpr, label=f'AUC = {auc:.4f}')
+    plt.plot([0, 1], [0, 1], 'k--')
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('ROC Curve')
+    plt.legend(loc='lower right')
+    plt.savefig(os.path.join(RESULTS_PATH, "roc_curve.png"))
+
+    # analyze_feature_importance(test_data, predictions, labels)
 
 def analyze_feature_importance(test_data, predictions, labels):
     """Analyze which features contribute most to correct/incorrect predictions"""

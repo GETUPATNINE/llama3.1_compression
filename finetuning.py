@@ -18,8 +18,6 @@ from peft import (
     TaskType,
     prepare_model_for_kbit_training
 )
-import evaluate
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from evaluation import evaluate_model
 
 BASE_MODEL_PATH = "llama-3.1-8B-Instruct"
@@ -71,23 +69,6 @@ def tokenize_function(examples, tokenizer, max_length=512):
     tokenized_inputs["labels"] = tokenized_inputs["input_ids"].clone()
     
     return tokenized_inputs
-
-def compute_metrics(eval_pred):
-    predictions, labels = eval_pred
-    
-    predictions = np.argmax(predictions, axis=1)
-    
-    precision, recall, f1, _ = precision_recall_fscore_support(
-        labels, predictions, average='binary'
-    )
-    acc = accuracy_score(labels, predictions)
-    
-    return {
-        "accuracy": acc,
-        "precision": precision,
-        "recall": recall,
-        "f1": f1
-    }
 
 def main():
     lora_config = LoraConfig(

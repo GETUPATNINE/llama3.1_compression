@@ -129,10 +129,13 @@ def main(args):
         model.zero_grad()
 
         logger.log("Start Pruning")
+
+        start_time = time.time()
+        
         for i in range(args.iterative_steps):
 
             if pruner_type in ['taylor']:
-                example_prompts = get_examples('diabetes', tokenizer, args.num_examples, seq_len = 64).to(args.device)
+                example_prompts = get_examples(args.calibration_dataset, tokenizer, args.num_examples, seq_len = 64).to(args.device)
                 logger.log("Start Backwarding in iterative steps = {}...".format(i))
                 if args.taylor in ['param_mix', 'param_second']:
                     for j in range(args.num_examples):
@@ -166,6 +169,9 @@ def main(args):
             for layer in model.model.layers:
                 layer.self_attn.num_heads = layer.self_attn.q_proj.weight.data.shape[0] // layer.self_attn.head_dim
                 layer.self_attn.num_key_value_heads = layer.self_attn.k_proj.weight.data.shape[0] // layer.self_attn.head_dim
+
+        end_time = time.time()
+        logger.log("Time for pruning: {}".format(end_time - start_time))
 
         # Clean the gradient in the model
         model.zero_grad()
@@ -281,6 +287,8 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Pruning LLaMA (huggingface version)')
+
+    parser.add_argument('--calibration_dataset', type=str, default='bookcorpus', help='dataset for calibration')
 
     # argument for parsing
     parser.add_argument('--base_model', type=str, default="meta-llama/Llama-2-7b-hf", help='base model name')
