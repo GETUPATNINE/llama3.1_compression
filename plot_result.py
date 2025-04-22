@@ -2,19 +2,33 @@ import matplotlib.pyplot as plt
 import os
 import json
 
-RESULTS_PATH = "output/"
-
 def plot_overall_result():
-    with open(os.path.join(RESULTS_PATH, "metrics.json"), "r") as f:
-        metrics = json.loads(f)
 
+    pruning_ratio = [0, 0.25, 0.5, 0.75]
     accuracy = []
     auc = []
     pruning_sparsity = []
-    for item in metrics:
-        accuracy.append(item['accuracy'])
-        auc.append(item['auc'])
-        pruning_sparsity.append(item['pruning sparsity'])
+    for ratio in pruning_ratio:
+        with open(f"prune_log/llama3.1_{ratio}/evaluation_information.txt", "r") as f:
+            lines = f.readlines()
+            for line in lines:
+                if "Accuracy" in line:
+                    accuracy.append(float(line.split(":")[1].strip()))
+                elif "AUC" in line:
+                    auc.append(float(line.split(":")[1].strip()))
+        
+        if ratio != 0:
+            with open(f'prune_log/llama3.1_{ratio}/pruning_information.txt', "r") as f:
+                lines = f.readlines()
+                for line in lines:
+                    if "Pruning ratio" in line:
+                        pruning_sparsity.append(1 - float(line.split(":")[1].strip()) / 100)
+        else:
+            pruning_sparsity.append(0)
+
+    print("Accuracy:", accuracy)
+    print("AUC:", auc)
+    print("Pruning Sparsity:", pruning_sparsity)
 
     plt.figure(figsize=(10, 7))
 

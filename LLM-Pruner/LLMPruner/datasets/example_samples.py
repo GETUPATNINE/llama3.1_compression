@@ -12,7 +12,7 @@ def get_c4(tokenizer, n_samples, seq_len):
     # traindata = load_dataset(
     #     'allenai/c4', 'allenai--c4', data_files={'train': 'en/c4-train.00000-of-01024.json.gz'}, split='train'
     # )
-    traindata = load_dataset('data/c4/c4-train.00000-of-01024.json', split='train')
+    traindata = load_dataset('data/c4', split='train')
     
     tokenized_samples, history = [], []
     for _ in range(n_samples):
@@ -69,7 +69,16 @@ def get_diabetes(tokenizer, n_samples, seq_len):
     
     for idx in indices:
         sample = all_data[idx]
-        full_text = f"Instruction: {sample['instruction']}\nInput: {sample['input']}\nOutput: {sample['output']}"
+        full_text = f"""Below is an instruction that describes a task, along with input data. Write a response that appropriately completes the request.
+
+### Instruction:
+{sample['instruction']}
+
+### Input:
+{sample['input']}
+
+### Response:
+{sample['output']}"""
         
         tokenized_sample = tokenizer(full_text, return_tensors='pt')
         

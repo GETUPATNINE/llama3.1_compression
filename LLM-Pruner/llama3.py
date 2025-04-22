@@ -22,8 +22,6 @@ from LLMPruner.templates.prompts import prompts
 sys.path.append(".")
 from evaluation import evaluate_model
 
-OUTPUT_DIR = 'output/llm_Pruner'
-
 def set_random_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
@@ -171,7 +169,7 @@ def main(args):
                 layer.self_attn.num_key_value_heads = layer.self_attn.k_proj.weight.data.shape[0] // layer.self_attn.head_dim
 
         end_time = time.time()
-        logger.log("Time for pruning: {}".format(end_time - start_time))
+        logger.log("Time for pruning: {} seconds".format(end_time - start_time))
 
         # Clean the gradient in the model
         model.zero_grad()
@@ -284,6 +282,11 @@ def main(args):
     # ppl = PPLMetric(model, tokenizer, ['wikitext2', 'ptb'], args.max_seq_len, device=args.eval_device)
     # logger.log("PPL after pruning: {}".format(ppl))
     logger.log("Memory Requirement: {} MiB\n".format(torch.cuda.memory_allocated()/1024/1024))
+
+    with open("prune_log/" + args.save_ckpt_log_name + "/pruning_information.txt", "w") as f:
+        f.write("Memory Requirement: {} MiB\n".format(torch.cuda.memory_allocated()/1024/1024))
+        f.write("Pruning ratio: {}\n".format(100.0*after_pruning_parameters/before_pruning_parameters))
+        f.write("Pruning time: {} seconds".format(end_time - start_time))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Pruning LLaMA (huggingface version)')

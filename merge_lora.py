@@ -3,7 +3,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import PeftModel
 
 model_name_or_path = "llama-3.1-8B-Instruct"
-lora_path = "output/lora_finetuned_llama-3.1-8B-Instruct"
+lora_path = "llama3.1-8b-instruct_adapter"
 output_path = "merged_lora_llama"
 print(f"Loading the base model from {model_name_or_path}")
 base = AutoModelForCausalLM.from_pretrained(

@@ -6,22 +6,22 @@
 
 ### Quick Start
 
-- For fine-tuning the pruned model ()
-
-  - ```bash
-    python finetuning.py
-    ```
-
-- For evaluation
-
-  - ```bash
-    python evaluation.py
-    ```
-
-- For pruning using LLM-Pruner
+- For pruning using LLM-Pruner (modify the --pruning_ratio and --save_ckpt_log_name for different ratio, and --calibration_dataset for different dataset)
 
   - ```bash
     bash prune_llmpruner.sh
+    ```
+
+- For fine-tuning and evaluating the pruned model (modify the --pruning_ratio)
+
+  - ```bash
+    bash finetune_pruned.sh
+    ```
+
+- For fine-tuning and evaluating the pretrained model
+
+  - ```bash
+    bash finetune_pretrained.sh
     ```
 
 ### Reference
